@@ -2,10 +2,8 @@ package XUI.Platform.AndroidInternal;
 
 import android.graphics.Canvas;
 import android.graphics.SurfaceTexture;
-import android.opengl.EGL14;
-import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
-import android.os.Build;
+import android.view.Surface;
 
 import androidx.annotation.NonNull;
 
@@ -14,12 +12,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static XUI.Platform.AndroidInternal.GLErrorLog.*;
 
 public class MiniCompositor {
-
     EGLRenderThread compositor = new EGLRenderThread();
 
     EGLRenderThread canvas = new EGLRenderThread();
 
     int mWidth = 0, mHeight = 0;
+
+    SurfaceTexture surface;
 
     CopyOnWriteArrayList<TextureCanvas> textureCanvasList = new CopyOnWriteArrayList<>();
 
@@ -28,10 +27,24 @@ public class MiniCompositor {
         canvas.thread.SetOnDoFrame(this::OnCanvasFrame);
     }
 
+    int g = 0;
+
     private void OnCanvasFrame(long timeNanos) {
         // EGL resources shared with compositor thread
         for (TextureCanvas textureCanvas : textureCanvasList) {
+            if (canvas.egl.HasSurface()) continue;
             if (textureCanvas.IsCreated()) {
+                synchronized (textureCanvas.isWriting) {
+                    if (!textureCanvas.isReading.get()) {
+                        textureCanvas.isWriting.set(true);
+                    }
+                }
+                if (!textureCanvas.isWriting.get()) {
+                    Error("CANVAS THREAD: compositor is reading");
+                    continue;
+                } else {
+                    Error("CANVAS THREAD: compositor is not reading");
+                }
                 Error("CANVAS THREAD: attach to surface texture");
                 if (!canvas.egl.TryAttachToSurfaceTexture(textureCanvas.surfaceTexture)) {
                     Error("CANVAS THREAD: failed to attach to surface texture");
@@ -42,57 +55,84 @@ public class MiniCompositor {
                     continue;
                 }
                 Error("CANVAS THREAD: made egl context current");
+                Error("CANVAS THREAD: resize texture canvas");
+                textureCanvas.Resize(mWidth, mHeight);
+                Error("CANVAS THREAD: resized texture canvas");
                 Canvas glCanvas = textureCanvas.BindOesTextureAndAcquireCanvas();
                 if (glCanvas != null) {
-                    Error("CANVAS THREAD: draw A 255 R 255 G 255 B 0");
-                    glCanvas.drawARGB(255, 255, 255, 0);
-                    textureCanvas.ReleaseCanvas(glCanvas);
-                }
-                GLES20.glFlush();
-                if (!canvas.egl.TryDetachFromSurfaceTexture()) {
-                    Error("CANVAS THREAD: failed to detach from surface texture");
-                    continue;
-                }
-                if (!canvas.egl.ReleaseCurrent()) {
-                    Error("CANVAS THREAD: failed to release current egl context");
-                    continue;
+                    g++;
+                    if (g == 256) {
+                        g = 0;
+                    }
+                    Error("CANVAS THREAD: draw A 255 R 255 G " + g + " B 0");
+                    glCanvas.drawARGB(255, 255, g, 0);
+                    GLES20.glFlush();
+                    textureCanvas.ReleaseCanvas(glCanvas, () -> {
+                        if (!canvas.egl.TryDetachFromSurfaceTexture()) {
+                            Error("CANVAS THREAD: failed to detach from surface texture");
+                        }
+                        if (!canvas.egl.ReleaseCurrent()) {
+                            Error("CANVAS THREAD: failed to release current egl context");
+                        }
+                    });
+                } else {
+                    if (!canvas.egl.TryDetachFromSurfaceTexture()) {
+                        Error("CANVAS THREAD: failed to detach from surface texture");
+                    }
+                    if (!canvas.egl.ReleaseCurrent()) {
+                        Error("CANVAS THREAD: failed to release current egl context");
+                    }
                 }
             }
         }
     }
 
     private void OnCompositeFrame(long timeNanos) {
-        if (!compositor.egl.HasSurface()) {
-            Error("COMPOSITOR THREAD: no EGL Surface");
+        if (surface == null) {
             return;
         }
-        Error("COMPOSITOR THREAD: got EGL Surface");
-        if (!compositor.egl.MakeCurrent()) {
-            Error("COMPOSITOR THREAD: failed to make egl context current");
-            return;
-        }
-        Error("COMPOSITOR THREAD: made egl context current");
-
-        android.opengl.GLES20.glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
-        android.opengl.GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
+//        android.opengl.GLES20.glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
+//        android.opengl.GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
 
         Error("COMPOSITOR THREAD: drawing textures");
         for (TextureCanvas textureCanvas : textureCanvasList) {
-            if (!textureCanvas.IsCreated()) {
-                textureCanvas.Create();
+            synchronized (textureCanvas.isWriting) {
+                if (!textureCanvas.isWriting.get()) {
+                    textureCanvas.isReading.set(true);
+                }
             }
-            Error("COMPOSITOR THREAD: resize texture canvas");
-            textureCanvas.Resize(mWidth, mHeight);
-            Error("COMPOSITOR THREAD: resized texture canvas");
-            Error("COMPOSITOR THREAD: drawing texture");
-            textureCanvas.oesTexture.Bind();
-            textureCanvas.oesTexture.Draw();
-            Error("COMPOSITOR THREAD: drawn texture");
+            if (textureCanvas.isReading.get()) {
+                Error("COMPOSITOR THREAD: canvas is not writing");
+                if (!compositor.egl.TryAttachToSurfaceTexture(surface)) {
+                    Error("COMPOSITOR THREAD: failed to get EGL Surface");
+                } else {
+                    Error("COMPOSITOR THREAD: got EGL Surface");
+                    if (!compositor.egl.MakeCurrent()) {
+                        Error("COMPOSITOR THREAD: failed to make egl context current");
+                    } else {
+                        Error("COMPOSITOR THREAD: made egl context current");
+                        if (!textureCanvas.IsCreated()) {
+                            textureCanvas.Create();
+                        } else {
+                            Error("COMPOSITOR THREAD: drawing texture");
+                            textureCanvas.oesTexture.Bind();
+                            textureCanvas.oesTexture.Draw();
+                            android.opengl.GLES20.glFlush();
+                            compositor.egl.SwapBuffers();
+                            Error("COMPOSITOR THREAD: drawn texture");
+                        }
+                        compositor.egl.ReleaseCurrent();
+                    }
+                    compositor.egl.TryDetachFromSurfaceTexture();
+                }
+            } else {
+                Error("COMPOSITOR THREAD: canvas is writing");
+            }
+            synchronized (textureCanvas.isWriting) {
+                textureCanvas.isReading.set(false);
+            }
         }
-        Error("COMPOSITOR THREAD: drawing textures");
-
-        android.opengl.GLES20.glFlush();
-        compositor.egl.SwapBuffers();
+        Error("COMPOSITOR THREAD: drawn textures");
     }
 
     public void Start() {
@@ -114,12 +154,7 @@ public class MiniCompositor {
     }
 
     public void Resume(@NonNull SurfaceTexture surface) {
-        compositor.thread.Post(() -> {
-            if (compositor.egl.HasContext()) {
-                compositor.egl.TryAttachToSurfaceTexture(surface);
-                // ignore failure
-            }
-        });
+        this.surface = surface;
         compositor.thread.SetRenderMode(true);
         canvas.thread.SetRenderMode(true);
     }
@@ -127,12 +162,6 @@ public class MiniCompositor {
     public void Pause() {
         canvas.thread.SetRenderMode(false);
         compositor.thread.SetRenderMode(false);
-        compositor.thread.PostAndWait(() -> {
-            if (compositor.egl.HasContext()) {
-                compositor.egl.TryDetachFromSurfaceTexture();
-                // ignore failure
-            }
-        });
     }
 
     public void Stop() {
@@ -144,10 +173,6 @@ public class MiniCompositor {
         canvas.thread.Stop();
         compositor.thread.SetRenderMode(false);
         compositor.thread.PostAndWait(() -> {
-            if (compositor.egl.HasContext()) {
-                compositor.egl.TryDetachFromSurfaceTexture();
-                // ignore failure
-            }
             Error("disposing gl resources");
             for (TextureCanvas textureCanvas : textureCanvasList) {
                 if (textureCanvas.IsCreated()) {

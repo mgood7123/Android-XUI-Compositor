@@ -4,17 +4,23 @@ import static XUI.Platform.AndroidInternal.GLErrorLog.Error;
 
 import android.graphics.Canvas;
 import android.graphics.SurfaceTexture;
-import android.os.Build;
 
-public class TextureCanvas {
-    OESTexture oesTexture = new OESTexture();
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public class TextureCanvas implements SurfaceTexture.OnFrameAvailableListener {
+    final OESTexture oesTexture = new OESTexture();
     SurfaceTexture surfaceTexture;
     android.view.Surface surface;
+    final AtomicBoolean isWriting = new AtomicBoolean(false);
+    final AtomicBoolean isReading = new AtomicBoolean(true);
+    Runnable runnable;
 
     void Create() {
         oesTexture.Create();
         Error("creating surface texture");
         surfaceTexture = new SurfaceTexture(false);
+        surfaceTexture.setOnFrameAvailableListener(this);
+        //surfaceTexture.attachToGLContext(oesTexture.mTextureID);
     }
 
     void Resize(int width, int height) {
@@ -28,7 +34,6 @@ public class TextureCanvas {
         // is not actually created via this call, it is simply binded
         //
         //https://cs.android.com/android/platform/superproject/main/+/main:frameworks/native/libs/nativedisplay/surfacetexture/EGLConsumer.cpp;drc=85c7dfc9fb9b77b8978b628a4fe852fedd19bb0f;l=431
-        surfaceTexture.attachToGLContext(oesTexture.mTextureID);
         surfaceTexture.getTransformMatrix(oesTexture.mSTMatrix);
         Error("create surface");
         surface = new android.view.Surface(surfaceTexture);
@@ -38,7 +43,7 @@ public class TextureCanvas {
         return canvas;
     }
 
-    public void ReleaseCanvas(Canvas acquiredCanvas) {
+    public void ReleaseCanvas(Canvas acquiredCanvas, Runnable runnable) {
         Error("detaching from texture");
         Error("bind OES texture");
         oesTexture.Bind();
@@ -48,15 +53,13 @@ public class TextureCanvas {
         Error("disposing surface");
         surface.release();
         surface = null;
-        Error("update tex image");
-        surfaceTexture.updateTexImage();
-        Error("release tex image");
-        surfaceTexture.releaseTexImage();
-        surfaceTexture.detachFromGLContext();
+        //surfaceTexture.detachFromGLContext();
         Error("detached from texture");
     }
 
     void Destroy() {
+        //Error("release tex image");
+        //surfaceTexture.releaseTexImage();
         Error("disposing surface texture");
         surfaceTexture.release();
         surfaceTexture = null;
@@ -65,5 +68,18 @@ public class TextureCanvas {
 
     public boolean IsCreated() {
         return surfaceTexture != null;
+    }
+
+    @Override
+    public void onFrameAvailable(SurfaceTexture surfaceTexture) {
+        Error("ON_FRAME");
+        Error("update tex image");
+        surfaceTexture.updateTexImage();
+        synchronized (isWriting) {
+            isWriting.set(false);
+        }
+        if (runnable != null) {
+            runnable.run();
+        }
     }
 }
