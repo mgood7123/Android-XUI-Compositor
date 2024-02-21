@@ -1,14 +1,13 @@
 package XUI.Platform.AndroidInternal;
 
-import android.util.Log;
-
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+/** @noinspection SynchronizationOnLocalVariableOrMethodParameter*/
 public class ManualResetEventSlim {
-    private AtomicBoolean set = new AtomicBoolean(false);
-    private int spinCount = 1000;
-    private AtomicReference<Object> waitHandle = new AtomicReference<>(null);
+    private final AtomicBoolean set = new AtomicBoolean(false);
+    private int spinCount = 10000;
+    private final AtomicReference<Object> waitHandle = new AtomicReference<>(null);
     public ManualResetEventSlim() {
     }
 
@@ -29,7 +28,7 @@ public class ManualResetEventSlim {
         return spinCount;
     }
 
-    public Object WaitHandle() {
+    public Object SpinWaitHandle() {
         if (waitHandle.get() == null) {
             Object o = new Object();
             waitHandle.set(o);
@@ -38,7 +37,7 @@ public class ManualResetEventSlim {
         return waitHandle.get();
     }
 
-    public void Set() {
+    public void SpinSet() {
         set.set(true);
         Object o = waitHandle.get();
         if (o != null) {
@@ -48,13 +47,13 @@ public class ManualResetEventSlim {
         }
     }
 
-    public void Wait() {
+    public void SpinWait() {
         for (int i = 0; i < spinCount; i++) {
             if (set.get()) {
                 return;
             }
         }
-        Object o = WaitHandle();
+        Object o = SpinWaitHandle();
         synchronized (o) {
             while (true) {
                 try {
@@ -66,7 +65,7 @@ public class ManualResetEventSlim {
         }
     }
 
-    public void Reset() {
+    public void SpinReset() {
         set.set(false);
         waitHandle.set(null);
     }

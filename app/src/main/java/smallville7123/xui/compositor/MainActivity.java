@@ -6,7 +6,7 @@ import android.os.Bundle;
 
 import java.util.ArrayList;
 
-import XUI.Platform.AndroidInternal.EGLView;
+import XUI.Platforms.Android.EGLView;
 
 public class MainActivity extends AppCompatActivity {
 

@@ -6,39 +6,27 @@ import android.graphics.Canvas;
 import android.graphics.SurfaceTexture;
 import android.view.Surface;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TextureCanvas implements SurfaceTexture.OnFrameAvailableListener {
     final OESTexture oesTexture = new OESTexture();
     SurfaceTexture surfaceTexture;
     Surface surface;
-    final AtomicBoolean isWriting = new AtomicBoolean(false);
-    final AtomicBoolean isReading = new AtomicBoolean(true);
-    enum STATE {
-        INIT,
-        DRAW,
-        POSTED,
-        UPDATE_TEXTURE
-    }
-
-    final AtomicReference<STATE> state = new AtomicReference<>(STATE.INIT);
-    Runnable runnable;
-
+    final public static int TEXTURE_STATE_INVALIDATE = 0;
+    final public static int TEXTURE_STATE_PENDING = 2;
+    final public static int TEXTURE_STATE_COPY_SURFACE_TO_TEXTURE = 3;
+    final public static int TEXTURE_STATE_CAN_DRAW = 4;
+    final AtomicInteger textureState = new AtomicInteger(TEXTURE_STATE_INVALIDATE);
+    long surface_frame = 0;
     void Create() {
-        Error("creating OES texture");
         oesTexture.Create();
-        Error("created OES texture");
-        Error("creating surface texture");
         surfaceTexture = new SurfaceTexture(false);
-        Error("created surface texture");
         surfaceTexture.setOnFrameAvailableListener(this);
+        surface = new Surface(surfaceTexture);
     }
 
     void Resize(int width, int height) {
-        Error("resizing surface texture to " + width + "x" + height);
         surfaceTexture.setDefaultBufferSize(width, height);
-        Error("resized surface texture to " + width + "x" + height);
     }
 
     public Canvas AcquireCanvas() {
@@ -49,32 +37,19 @@ public class TextureCanvas implements SurfaceTexture.OnFrameAvailableListener {
         //
         // although it does create an internal EGLImage
         //
-        Error("creating surface");
-        surface = new Surface(surfaceTexture);
-        Error("created surface");
-        Error("locking hardware canvas");
         Canvas canvas = surface.lockHardwareCanvas();
         if (canvas == null) {
             Error("failed to lock hardware canvas");
-        } else {
-            Error("locked hardware canvas");
         }
         return canvas;
     }
 
     void Destroy() {
-        Error("disposing surface");
         surface.release();
         surface = null;
-        Error("disposed surface");
-        Error("disposing surface texture");
         surfaceTexture.release();
         surfaceTexture = null;
-        Error("disposed surface texture");
-        Error("destroying OES texture");
         oesTexture.Destroy();
-        Error("destroyed OES texture");
-        state.set(STATE.INIT);
     }
 
     public boolean IsCreated() {
@@ -88,6 +63,16 @@ public class TextureCanvas implements SurfaceTexture.OnFrameAvailableListener {
         // The frame-available callback is called on an arbitrary thread,
         // so unless special care is taken updateTexImage() should not be called directly from the callback.
         //
-        state.set(STATE.UPDATE_TEXTURE);
+        textureState.set(TEXTURE_STATE_COPY_SURFACE_TO_TEXTURE);
+    }
+
+    public static String stateToName(int textureState) {
+        switch (textureState) {
+            case TEXTURE_STATE_INVALIDATE: return "INVALIDATE";
+            case TEXTURE_STATE_PENDING: return "PENDING";
+            case TEXTURE_STATE_COPY_SURFACE_TO_TEXTURE: return "COPY_SURFACE_TO_TEXTURE";
+            case TEXTURE_STATE_CAN_DRAW: return "CAN_DRAW";
+            default: return "UNKNOWN";
+        }
     }
 }

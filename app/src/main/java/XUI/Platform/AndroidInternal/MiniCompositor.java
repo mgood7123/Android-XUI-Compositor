@@ -5,314 +5,202 @@ import static XUI.Platform.AndroidInternal.GLErrorLog.Error;
 import android.graphics.Canvas;
 import android.graphics.SurfaceTexture;
 import android.opengl.GLES20;
-
-import androidx.annotation.NonNull;
+import android.view.Surface;
 
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
 
+/** @noinspection Anonymous2MethodRef, Convert2Lambda */
 public class MiniCompositor {
     EGLRenderThread compositor = new EGLRenderThread();
 
-    //EGLRenderThread canvas = new EGLRenderThread();
-
-    int mWidth = 0, mHeight = 0;
+    public int mWidth = 0, mHeight = 0;
 
     SurfaceTexture surface;
 
     public MiniCompositor() {
-        compositor.thread.SetOnDoFrame(this::OnCompositeFrame);
-        //canvas.thread.SetOnDoFrame(this::OnCanvasFrame);
+        compositor.thread.SetOnDoFrame(new RunnableLong() {
+            @Override
+            public void run(long timeNanos) {
+                MiniCompositor.this.OnCompositeFrame(timeNanos);
+            }
+        });
     }
 
     int g = 0;
 
-//    private void OnCanvasFrame(long timeNanos) {
-//        // EGL resources shared with compositor thread
-//        for (TextureCanvas textureCanvas : textureCanvasList) {
-//            if (canvas.egl.HasSurface()) continue;
-//            if (textureCanvas.IsCreated()) {
-//                synchronized (textureCanvas.isWriting) {
-//                    if (!textureCanvas.isReading.get()) {
-//                        textureCanvas.isWriting.set(true);
-//                    }
-//                }
-//                if (!textureCanvas.isWriting.get()) {
-//                    Error("CANVAS THREAD: compositor is reading");
-//                    continue;
-//                } else {
-//                    Error("CANVAS THREAD: compositor is not reading");
-//                }
-//                Error("CANVAS THREAD: attach to surface texture");
-//                if (!canvas.egl.TryAttachToSurfaceTexture(textureCanvas.surfaceTexture)) {
-//                    Error("CANVAS THREAD: failed to attach to surface texture");
-//                    continue;
-//                }
-//                if (!canvas.egl.MakeCurrent()) {
-//                    Error("CANVAS THREAD: failed to make egl context current");
-//                    continue;
-//                }
-//                Error("CANVAS THREAD: made egl context current");
-//                Error("CANVAS THREAD: resize texture canvas");
-//                textureCanvas.Resize(mWidth, mHeight);
-//                Error("CANVAS THREAD: resized texture canvas");
-//                Canvas glCanvas = textureCanvas.BindOesTextureAndAcquireCanvas();
-//                if (glCanvas != null) {
-//                    g++;
-//                    if (g == 256) {
-//                        g = 0;
-//                    }
-//                    Error("CANVAS THREAD: draw A 255 R 255 G " + g + " B 0");
-//                    glCanvas.drawARGB(255, 255, g, 0);
-//                    GLES20.glFlush();
-//                    textureCanvas.ReleaseCanvas(glCanvas, () -> {
-//                        if (!canvas.egl.TryDetachFromSurfaceTexture()) {
-//                            Error("CANVAS THREAD: failed to detach from surface texture");
-//                        }
-//                        if (!canvas.egl.ReleaseCurrent()) {
-//                            Error("CANVAS THREAD: failed to release current egl context");
-//                        }
-//                    });
-//                } else {
-//                    if (!canvas.egl.TryDetachFromSurfaceTexture()) {
-//                        Error("CANVAS THREAD: failed to detach from surface texture");
-//                    }
-//                    if (!canvas.egl.ReleaseCurrent()) {
-//                        Error("CANVAS THREAD: failed to release current egl context");
-//                    }
-//                }
-//            }
-//        }
-//    }
-
     CopyOnWriteArrayList<TextureCanvas> textureCanvasList = new CopyOnWriteArrayList<>();
-    enum STATE {
-        CHOOSE_TEXTURE,
-        ATTACH_SCREEN_TEXTURE_FOR_TEXTURE_INIT,
-        INIT_TEXTURE,
-        DRAW_TEXTURE,
-        SCREEN_TEXTURE__GL_CLEAR,
-        COMPOSITE_TEXTURE_TO_SCREEN_TEXTURE,
-        DETACH_SCREEN_TEXTURE,
-        DESTROY_TEXTURE,
-    }
-    final AtomicReference<STATE> state = new AtomicReference<>(STATE.CHOOSE_TEXTURE);
-    final AtomicReference<TextureCanvas> currentTexture = new AtomicReference<>(null);
 
+    long render_frame = 0;
     private void OnCompositeFrame(long timeNanos) {
         if (surface == null || mWidth == 0 || mHeight == 0) {
             return;
         }
-
-        STATE compositorState = state.get();
-        switch(compositorState) {
-            case CHOOSE_TEXTURE:
-                Error("MiniCompositor state: " + compositorState.name());
-                for (TextureCanvas textureCanvas : textureCanvasList) {
-                    TextureCanvas.STATE textureState = textureCanvas.state.get();
-                    if (textureState == TextureCanvas.STATE.INIT) {
-                        currentTexture.set(textureCanvas);
-                        state.set(STATE.ATTACH_SCREEN_TEXTURE_FOR_TEXTURE_INIT);
-                    }
-                }
-                break;
-            case ATTACH_SCREEN_TEXTURE_FOR_TEXTURE_INIT:
-                Error("MiniCompositor state: " + compositorState.name());
-                if (!compositor.egl.TryAttachToSurfaceTexture(surface)) {
-                    Error("failed to attach to surface texture");
-                    break;
-                }
-                Error("attached to surface texture");
-                if (!compositor.egl.MakeCurrent()) {
-                    Error("failed to make egl context current");
-                    break;
-                }
-                Error("attached to egl context");
-                state.set(STATE.INIT_TEXTURE);
-                break;
-            case INIT_TEXTURE:
-                Error("MiniCompositor state: " + compositorState.name());
-                TextureCanvas textureCanvas3 = currentTexture.get();
-                TextureCanvas.STATE textureState2 = textureCanvas3.state.get();
-                Error("TextureCanvas state:  " + textureState2.name());
-                textureCanvas3.Create();
-                textureCanvas3.Resize(mWidth, mHeight);
-                textureCanvas3.state.set(TextureCanvas.STATE.DRAW);
-                state.set(STATE.DRAW_TEXTURE);
-                break;
-            case SCREEN_TEXTURE__GL_CLEAR:
-                Error("MiniCompositor state: " + compositorState.name());
-                android.opengl.GLES20.glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
-                android.opengl.GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
-                state.set(STATE.COMPOSITE_TEXTURE_TO_SCREEN_TEXTURE);
-                break;
-            case DESTROY_TEXTURE:
-                Error("MiniCompositor state: " + compositorState.name());
-                TextureCanvas textureCanvas2 = currentTexture.get();
-                textureCanvas2.Destroy();
-                currentTexture.set(null);
-                state.set(STATE.DETACH_SCREEN_TEXTURE);
-                break;
-            case DETACH_SCREEN_TEXTURE:
-                Error("MiniCompositor state: " + compositorState.name());
-                if (!compositor.egl.TryDetachFromSurfaceTexture()) {
-                    Error("failed to detach to surface texture");
-                    break;
-                }
-                Error("detached from surface texture");
-                if (!compositor.egl.ReleaseCurrent()) {
-                    Error("failed to release egl context");
-                    break;
-                }
-                Error("released egl context");
-                state.set(STATE.CHOOSE_TEXTURE);
-                break;
-            case COMPOSITE_TEXTURE_TO_SCREEN_TEXTURE:
-                Error("MiniCompositor state: " + compositorState.name());
-                Error("drawing texture");
-                TextureCanvas textureCanvas1 = currentTexture.get();
-                textureCanvas1.oesTexture.Bind();
-                textureCanvas1.oesTexture.Draw();
-                android.opengl.GLES20.glFlush();
-                compositor.egl.SwapBuffers();
-                Error("drawn texture");
-                state.set(STATE.DESTROY_TEXTURE);
-                break;
-            case DRAW_TEXTURE:
-                TextureCanvas textureCanvas = currentTexture.get();
-                TextureCanvas.STATE textureState = textureCanvas.state.get();
-                if (textureState == TextureCanvas.STATE.POSTED) {
-                    // waiting for UPDATE_TEXTURE
-                    break;
-                }
-                switch (textureState) {
-                    case DRAW:
-                        Error("MiniCompositor state: " + compositorState.name());
-                        Error("TextureCanvas state:  " + textureState.name());
-                        Canvas glCanvas = textureCanvas.AcquireCanvas();
-                        if (glCanvas != null) {
-                            Error("draw A 255 R 255 G " + g + " B 0");
-                            glCanvas.drawARGB(255, 255, g, 0);
-                            android.graphics.Paint paint = new android.graphics.Paint();
-                            paint.setTextSize(80);
-                            paint.setColor(android.graphics.Color.BLUE);
-                            glCanvas.drawText("draw A 255 R 255 G " + g + " B 0", 0, paint.getTextSize(), paint);
-                            if (g == 255) {
-                                g = 0;
-                            } else {
-                                g++;
-                            }
-                            GLES20.glFlush();
-                            textureCanvas.state.set(TextureCanvas.STATE.POSTED);
-                            Error("unlock canvas and post");
-                            textureCanvas.surface.unlockCanvasAndPost(glCanvas);
-                            Error("unlocked canvas and posted");
-                        }
-                        break;
-                    case UPDATE_TEXTURE:
-                        Error("MiniCompositor state: " + compositorState.name());
-                        Error("TextureCanvas state:  " + textureState.name());
-                        Error("binding OES texture");
-                        textureCanvas.oesTexture.Bind();
-                        Error("bound OES texture");
-                        Error("attaching to OES texture");
-                        textureCanvas.surfaceTexture.attachToGLContext(textureCanvas.oesTexture.mTextureID);
-                        Error("attached to OES texture");
-                        Error("updating tex image");
-                        textureCanvas.surfaceTexture.updateTexImage();
-                        Error("updated tex image");
-                        textureCanvas.surfaceTexture.getTransformMatrix(textureCanvas.oesTexture.mSTMatrix);
-                        state.set(STATE.SCREEN_TEXTURE__GL_CLEAR);
-                        break;
-                }
-                break;
-        }
-    }
-
-    public void Start() {
-        compositor.thread.Start();
-        compositor.thread.PostAndWait(() -> {
-            compositor.egl.TryCreateHighest(8, 8, 8, 0, 16, 0);
-            // ignore failure
-            Error("creating gl resources");
-            textureCanvasList.add(new TextureCanvas());
-            Error("created gl resources");
-        });
-        compositor.thread.SetRenderMode(true);
-//        canvas.thread.Start();
-//        canvas.thread.PostAndWait(() -> {
-//            if (canvas.egl.TryCreate(8, 8, 8, 0, 16, 0, compositor.egl.glesContextVersionEnum, compositor.egl.eglContext)) {
-//                Error("creating gl resources");
-//                textureCanvasList.add(new TextureCanvas());
-//                Error("created gl resources");
-//            }
-//        });
-//        canvas.thread.SetRenderMode(true);
-    }
-
-    public void Resume(@NonNull SurfaceTexture surface) {
-        this.surface = surface;
-        compositor.thread.SetRenderMode(true);
-//        canvas.thread.SetRenderMode(true);
-    }
-
-    public void Pause() {
-//        canvas.thread.SetRenderMode(false);
-        compositor.thread.SetRenderMode(false);
-    }
-
-    public void Stop() {
-//        canvas.thread.SetRenderMode(false);
-//        canvas.thread.PostAndWait(() -> {
-//            canvas.egl.TryDestroy();
-//            // ignore failure
-//        });
-//        canvas.thread.Stop();
-        compositor.thread.SetRenderMode(false);
-        compositor.thread.PostAndWait(() -> {
-            if (!compositor.egl.TryDetachFromSurfaceTexture()) {
-                Error("failed to detach to surface texture");
-            }
-            Error("detached from surface texture");
-            if (!compositor.egl.ReleaseCurrent()) {
-                Error("failed to release egl context");
-            }
-            Error("released egl context");
+        if (!compositor.egl.HasSurface()) {
             if (!compositor.egl.TryAttachToSurfaceTexture(surface)) {
                 Error("failed to attach to surface texture");
+                return;
             }
             Error("attached to surface texture");
             if (!compositor.egl.MakeCurrent()) {
                 Error("failed to make egl context current");
+                return;
             }
             Error("attached to egl context");
-            Error("disposing gl resources");
-            for (TextureCanvas textureCanvas : textureCanvasList) {
-                if (textureCanvas.IsCreated()) {
-                    textureCanvas.Destroy();
+        } else if(!compositor.egl.HasContext()) {
+            if (!compositor.egl.MakeCurrent()) {
+                Error("failed to make egl context current");
+                return;
+            }
+            Error("attached to egl context");
+        }
+
+        for (TextureCanvas textureCanvas : textureCanvasList) {
+            int textureState = textureCanvas.textureState.get();
+            final int textureStateReal = textureState;
+            if (textureState == TextureCanvas.TEXTURE_STATE_INVALIDATE) {
+                if (!textureCanvas.IsCreated()) {
+                    textureCanvas.Create();
+                }
+
+                textureCanvas.Resize(mWidth, mHeight);
+
+                Canvas glCanvas = textureCanvas.AcquireCanvas();
+                if (glCanvas != null) {
+                    glCanvas.drawARGB(255, 255, g, 0);
+                    android.graphics.Paint paint = new android.graphics.Paint();
+                    paint.setTextSize(80);
+                    paint.setColor(android.graphics.Color.BLUE);
+                    glCanvas.drawText("draw A 255 R 255 G " + g + " B 0", 0, 80, paint);
+                    paint.setTextSize(60);
+                    glCanvas.drawText("compositor render frame: " + render_frame, 0, 160, paint);
+                    glCanvas.drawText("texture render frame:         " + textureCanvas.surface_frame, 0, 220, paint);
+                    if (g == 255) {
+                        g = 0;
+                    } else {
+                        g++;
+                    }
+                    GLES20.glFlush();
+                    textureCanvas.textureState.set(TextureCanvas.TEXTURE_STATE_PENDING);
+                    // the texture will become available at the next frame
+                    textureCanvas.surface.unlockCanvasAndPost(glCanvas);
+                } else {
+                    // if we fail then draw the previous texture and try again next frame
+                    textureState = TextureCanvas.TEXTURE_STATE_CAN_DRAW;
                 }
             }
-            Error("disposed");
-            if (!compositor.egl.TryDetachFromSurfaceTexture()) {
-                Error("failed to detach to surface texture");
+            if (textureState == TextureCanvas.TEXTURE_STATE_PENDING) {
+                // the previous frame posted a texture but we have not received it yet
+                // draw previous texture until we obtain a new one
+                textureState = TextureCanvas.TEXTURE_STATE_CAN_DRAW;
             }
-            Error("detached from surface texture");
-            if (!compositor.egl.ReleaseCurrent()) {
-                Error("failed to release egl context");
+            if (textureState == TextureCanvas.TEXTURE_STATE_COPY_SURFACE_TO_TEXTURE) {
+                textureCanvas.oesTexture.Bind();
+                textureCanvas.surfaceTexture.attachToGLContext(textureCanvas.oesTexture.mTextureID);
+                textureCanvas.surfaceTexture.updateTexImage();
+                textureCanvas.surfaceTexture.getTransformMatrix(textureCanvas.oesTexture.mSTMatrix);
+                textureCanvas.surfaceTexture.release();
+                textureCanvas.surfaceTexture = new SurfaceTexture(false);
+                textureCanvas.surfaceTexture.setOnFrameAvailableListener(textureCanvas);
+                textureCanvas.surface.release();
+                textureCanvas.surface = new Surface(textureCanvas.surfaceTexture);
+                textureState = TextureCanvas.TEXTURE_STATE_CAN_DRAW;
+                textureCanvas.textureState.set(textureState);
             }
-            Error("released egl context");
-            compositor.egl.TryDestroy();
+            if (textureState == TextureCanvas.TEXTURE_STATE_CAN_DRAW) {
+                android.opengl.GLES20.glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
+                android.opengl.GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
+                textureCanvas.oesTexture.Bind();
+                textureCanvas.oesTexture.Draw();
+                android.opengl.GLES20.glFlush();
+                compositor.egl.SwapBuffers();
+                textureCanvas.surface_frame++;
+                if (textureStateReal != TextureCanvas.TEXTURE_STATE_PENDING) {
+                    textureCanvas.Resize(mWidth, mHeight);
+                    Canvas glCanvas = textureCanvas.AcquireCanvas();
+                    if (glCanvas != null) {
+                        // draw and post the next frame
+                        glCanvas.drawARGB(255, 255, g, 0);
+                        android.graphics.Paint paint = new android.graphics.Paint();
+                        paint.setTextSize(80);
+                        paint.setColor(android.graphics.Color.BLUE);
+                        glCanvas.drawText("draw A 255 R 255 G " + g + " B 0", 0, 80, paint);
+                        paint.setTextSize(60);
+                        glCanvas.drawText("compositor render frame: " + render_frame, 0, 160, paint);
+                        glCanvas.drawText("texture render frame:         " + textureCanvas.surface_frame, 0, 220, paint);
+                        if (g == 255) {
+                            g = 0;
+                        } else {
+                            g++;
+                        }
+                        GLES20.glFlush();
+                        textureCanvas.textureState.set(TextureCanvas.TEXTURE_STATE_PENDING);
+                        // the texture will become available at the next frame
+                        textureCanvas.surface.unlockCanvasAndPost(glCanvas);
+                    } else {
+                        // if we fail to lock the canvas, try again next frame
+                        textureCanvas.textureState.set(TextureCanvas.TEXTURE_STATE_INVALIDATE);
+                    }
+                }
+            }
+        }
+        render_frame++;
+    }
+
+    public void Start() {
+        compositor.thread.Start();
+        compositor.thread.PostAndWait(new Runnable() {
+            @Override
+            public void run() {
+                compositor.egl.TryCreateHighest(8, 8, 8, 0, 16, 0);
+                // ignore failure
+                Error("creating gl resources");
+                textureCanvasList.add(new TextureCanvas());
+                Error("created gl resources");
+            }
+        });
+        compositor.thread.SetRenderMode(true);
+    }
+
+    public void Resume(SurfaceTexture surface) {
+        this.surface = surface;
+        compositor.thread.SetRenderMode(true);
+    }
+
+    public void Pause() {
+        compositor.thread.SetRenderMode(false);
+    }
+
+    public void Stop() {
+        compositor.thread.SetRenderMode(false);
+        compositor.thread.PostAndWait(new Runnable() {
+            @Override
+            public void run() {
+                Error("disposing gl resources");
+                for (TextureCanvas textureCanvas : textureCanvasList) {
+                    if (textureCanvas.IsCreated()) {
+                        textureCanvas.Destroy();
+                    }
+                }
+                Error("disposed");
+                if (!compositor.egl.TryDetachFromSurfaceTexture()) {
+                    Error("failed to detach to surface texture");
+                }
+                Error("detached from surface texture");
+                if (!compositor.egl.ReleaseCurrent()) {
+                    Error("failed to release egl context");
+                }
+                Error("released egl context");
+                compositor.egl.TryDestroy();
+            }
         });
         compositor.thread.Stop();
     }
 
     public void PauseRender() {
-//        canvas.thread.SetRenderMode(false);
         compositor.thread.SetRenderMode(false);
     }
 
     public void ResumeRender() {
-//        canvas.thread.SetRenderMode(true);
         compositor.thread.SetRenderMode(true);
     }
 }

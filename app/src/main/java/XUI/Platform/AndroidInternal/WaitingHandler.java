@@ -4,29 +4,27 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
+/** @noinspection NullableProblems*/
 public class WaitingHandler extends Handler {
 
     Runnable Target;
     ManualResetEventSlim TargetHandled = new ManualResetEventSlim();
 
-    public WaitingHandler(@NonNull Looper looper) {
+    public WaitingHandler(Looper looper) {
         super(looper);
     }
 
-    public WaitingHandler(@NonNull Looper looper, @Nullable Callback callback) {
+    public WaitingHandler(Looper looper, Callback callback) {
         super(looper, callback);
     }
 
     @Override
-    public void dispatchMessage(@NonNull Message msg) {
+    public void dispatchMessage(Message msg) {
         if (Target != null) {
             Runnable callback = msg.getCallback();
             if (callback != null && Target == callback) {
                 super.dispatchMessage(msg);
-                TargetHandled.Set();
+                TargetHandled.SpinSet();
                 return;
             }
         }
@@ -34,12 +32,12 @@ public class WaitingHandler extends Handler {
     }
 
     @Override
-    public void handleMessage(@NonNull Message msg) {
+    public void handleMessage(Message msg) {
         if (Target != null) {
             Runnable callback = msg.getCallback();
             if (callback != null && Target == callback) {
                 super.handleMessage(msg);
-                TargetHandled.Set();
+                TargetHandled.SpinSet();
                 return;
             }
         }
@@ -51,8 +49,8 @@ public class WaitingHandler extends Handler {
         post(runnable);
         // The caller of this method blocks indefinitely until the current instance is set.
         //   The caller will return immediately if the event is currently in a set state.
-        TargetHandled.Wait();
-        TargetHandled.Reset();
+        TargetHandled.SpinWait();
+        TargetHandled.SpinReset();
         Target = null;
     }
 }

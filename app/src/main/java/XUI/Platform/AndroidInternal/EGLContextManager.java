@@ -1,17 +1,16 @@
 package XUI.Platform.AndroidInternal;
 
-import static android.opengl.EGL15.EGL_CONTEXT_MAJOR_VERSION;
-import static android.opengl.EGL15.EGL_CONTEXT_MINOR_VERSION;
-
 import static XUI.Platform.AndroidInternal.EGLContextManager.GLES_VERSION.*;
 
 import android.opengl.*;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
 public class EGLContextManager {
+    // declared in EGL15 (EGL 1.5) but absent in EGL14 (EGL 1.4)
+    // we assume these work in EGL14 (EGL 1.4)
+    public static final int EGL_CONTEXT_MINOR_VERSION = 12539;
+    public static final int EGL_CONTEXT_MAJOR_VERSION = 12440;
+
     int[] config = new int[15];
 
     EGLDisplay eglDisplay;
@@ -146,27 +145,27 @@ public class EGLContextManager {
         }
 
         boolean config_found = false;
-        for (int i = 0; i < configs.length; i++) {
-            if (!EGL14.eglGetConfigAttrib(eglDisplay, configs[i], EGL14.EGL_RED_SIZE, tmp_value, 0) || tmp_value[0] != redSize) {
+        for (EGLConfig value : configs) {
+            if (!EGL14.eglGetConfigAttrib(eglDisplay, value, EGL14.EGL_RED_SIZE, tmp_value, 0) || tmp_value[0] != redSize) {
                 continue;
             }
-            if (!EGL14.eglGetConfigAttrib(eglDisplay, configs[i], EGL14.EGL_GREEN_SIZE, tmp_value, 0) || tmp_value[0] != greenSize) {
+            if (!EGL14.eglGetConfigAttrib(eglDisplay, value, EGL14.EGL_GREEN_SIZE, tmp_value, 0) || tmp_value[0] != greenSize) {
                 continue;
             }
-            if (!EGL14.eglGetConfigAttrib(eglDisplay, configs[i], EGL14.EGL_BLUE_SIZE, tmp_value, 0) || tmp_value[0] != blueSize) {
+            if (!EGL14.eglGetConfigAttrib(eglDisplay, value, EGL14.EGL_BLUE_SIZE, tmp_value, 0) || tmp_value[0] != blueSize) {
                 continue;
             }
-            if (!EGL14.eglGetConfigAttrib(eglDisplay, configs[i], EGL14.EGL_ALPHA_SIZE, tmp_value, 0) || tmp_value[0] != alphaSize) {
+            if (!EGL14.eglGetConfigAttrib(eglDisplay, value, EGL14.EGL_ALPHA_SIZE, tmp_value, 0) || tmp_value[0] != alphaSize) {
                 continue;
             }
-            if (!EGL14.eglGetConfigAttrib(eglDisplay, configs[i], EGL14.EGL_DEPTH_SIZE, tmp_value, 0) || tmp_value[0] != depthSize) {
+            if (!EGL14.eglGetConfigAttrib(eglDisplay, value, EGL14.EGL_DEPTH_SIZE, tmp_value, 0) || tmp_value[0] != depthSize) {
                 continue;
             }
-            if (!EGL14.eglGetConfigAttrib(eglDisplay, configs[i], EGL14.EGL_STENCIL_SIZE, tmp_value, 0) || tmp_value[0] != stencilSize) {
+            if (!EGL14.eglGetConfigAttrib(eglDisplay, value, EGL14.EGL_STENCIL_SIZE, tmp_value, 0) || tmp_value[0] != stencilSize) {
                 continue;
             }
             config_found = true;
-            eglConfig = configs[i];
+            eglConfig = value;
             break;
         }
 
@@ -260,16 +259,13 @@ public class EGLContextManager {
         return true;
     }
 
-    public boolean TryAttachToSurfaceTexture(@NonNull android.graphics.SurfaceTexture surfaceTexture) {
+    public boolean TryAttachToSurfaceTexture(android.graphics.SurfaceTexture surfaceTexture) {
         if (!HasContext()) {
             return false;
         }
         // attrib list cannot be null
         eglSurface = EGL14.eglCreateWindowSurface(eglDisplay, eglConfig, surfaceTexture, new int[]{EGL14.EGL_NONE}, 0);
-        if (eglSurface == null || eglSurface == EGL14.EGL_NO_SURFACE) {
-            return false;
-        }
-        return true;
+        return eglSurface != null && eglSurface != EGL14.EGL_NO_SURFACE;
     }
 
     public boolean TryDetachFromSurfaceTexture() {

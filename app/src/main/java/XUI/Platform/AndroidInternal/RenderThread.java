@@ -4,10 +4,10 @@ import android.os.HandlerThread;
 import android.util.Log;
 import android.view.Choreographer;
 
-import java.util.Objects;
-
+/** @noinspection Convert2Lambda, Convert2Lambda */
 public class RenderThread {
-    class RenderThreadActual extends HandlerThread {
+    /** @noinspection Anonymous2MethodRef, Convert2Lambda */
+    static class RenderThreadActual extends HandlerThread {
         class RenderPost implements Choreographer.FrameCallback {
             RenderThreadActual renderThread;
             boolean continuous;
@@ -48,13 +48,23 @@ public class RenderThread {
                 if (isContinuous) {
                     if (handler != null) {
                         Log.e("GL", "render changed from manual to continuous, posting post callback");
-                        handler.post(this::postFrameCallback);
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                RenderThreadActual.this.postFrameCallback();
+                            }
+                        });
                         Log.e("GL", "render changed from manual to continuous, post callback complete");
                     }
                 } else {
                     if (handler != null) {
                         Log.e("GL", "render changed from continuous to manual, posting remove callback and wait for completion");
-                        handler.postAndWait(this::removeFrameCallback);
+                        handler.postAndWait(new Runnable() {
+                            @Override
+                            public void run() {
+                                RenderThreadActual.this.removeFrameCallback();
+                            }
+                        });
                         Log.e("GL", "render changed from continuous to manual, remove callback has complete");
                     }
                 }
@@ -91,9 +101,19 @@ public class RenderThread {
         renderThread.start();
         renderThread.handler = new WaitingHandler(renderThread.getLooper());
         if (renderThread.isContinuous) {
-            renderThread.handler.post(renderThread::postFrameCallback);
+            renderThread.handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    renderThread.postFrameCallback();
+                }
+            });
         } else {
-            renderThread.handler.postAndWait(renderThread::removeFrameCallback);
+            renderThread.handler.postAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    renderThread.removeFrameCallback();
+                }
+            });
         }
     }
 

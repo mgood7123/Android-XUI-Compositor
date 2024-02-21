@@ -1,28 +1,33 @@
-package XUI.Platform.AndroidInternal;
+package XUI.Platforms.Android;
 
 import android.content.Context;
 import android.graphics.SurfaceTexture;
 import android.util.Log;
 import android.view.TextureView;
 
-import androidx.annotation.NonNull;
-
+import XUI.Platform.AndroidInternal.MiniCompositor;
 import smallville7123.xui.compositor.MainActivity;
 
 public class EGLView extends TextureView implements TextureView.SurfaceTextureListener {
     MiniCompositor miniCompositor;
 
-    public EGLView(@NonNull Context context) {
+    public EGLView(Context context) {
         super(context);
         setSurfaceTextureListener(this);
         miniCompositor = new MiniCompositor();
-        MainActivity.OnPauseActions.add(() -> {
-            Log.e("GL", "activity pause");
-            miniCompositor.PauseRender();
+        MainActivity.OnPauseActions.add(new Runnable() {
+            @Override
+            public void run() {
+                Log.e("GL", "activity pause");
+                miniCompositor.PauseRender();
+            }
         });
-        MainActivity.OnResumeActions.add(() -> {
-            Log.e("GL", "activity resume");
-            miniCompositor.ResumeRender();
+        MainActivity.OnResumeActions.add(new Runnable() {
+            @Override
+            public void run() {
+                Log.e("GL", "activity resume");
+                miniCompositor.ResumeRender();
+            }
         });
     }
 
@@ -41,26 +46,26 @@ public class EGLView extends TextureView implements TextureView.SurfaceTextureLi
     }
 
     @Override
-    public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
+    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         miniCompositor.mWidth = width;
         miniCompositor.mHeight = height;
         miniCompositor.Resume(surface);
     }
 
     @Override
-    public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
+    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
         miniCompositor.mWidth = width;
         miniCompositor.mHeight = height;
     }
 
     @Override
-    public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surface) {
+    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
         miniCompositor.Pause();
         return false;
     }
 
     @Override
-    public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surface) {
+    public void onSurfaceTextureUpdated(SurfaceTexture surface) {
 
     }
 }
