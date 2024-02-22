@@ -94,7 +94,6 @@ public class MiniCompositor {
                 textureState = TextureCanvas.TEXTURE_STATE_CAN_DRAW;
             }
             if (textureState == TextureCanvas.TEXTURE_STATE_COPY_SURFACE_TO_TEXTURE) {
-                textureCanvas.oesTexture.Bind();
                 textureCanvas.surfaceTexture.attachToGLContext(textureCanvas.oesTexture.mTextureID);
                 textureCanvas.surfaceTexture.updateTexImage();
                 textureCanvas.surfaceTexture.getTransformMatrix(textureCanvas.oesTexture.mSTMatrix);
@@ -109,7 +108,6 @@ public class MiniCompositor {
             if (textureState == TextureCanvas.TEXTURE_STATE_CAN_DRAW) {
                 android.opengl.GLES20.glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
                 android.opengl.GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
-                textureCanvas.oesTexture.Bind();
                 textureCanvas.oesTexture.Draw();
                 android.opengl.GLES20.glFlush();
                 compositor.egl.SwapBuffers();
